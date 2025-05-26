@@ -117,3 +117,5 @@ optional = true
 [dependencies.ffmpeg-sys-next]
 version = "7.1.0"
 default-features = false
+git = "https://github.com/LTBL-Studio/rust-ffmpeg-sys.git"
+branch = "decklink"
