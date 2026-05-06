@@ -1,6 +1,6 @@
 [package]
 name    = "ffmpeg-next"
-version = "7.1.1"
+version = "8.1.1"
 build   = "build.rs"
 
 authors = ["meh. <meh@schizofreni.co>", "Zhiming Wang <i@zhimingwang.org>"]
@@ -120,14 +120,14 @@ rpi = []
 
 [dependencies]
 libc     = "0.2"
-bitflags = "2.6"
+bitflags = "2.11"
 
 [dependencies.image]
 version  = "0.25"
 optional = true
 
 [dependencies.ffmpeg-sys-next]
-version = "7.1.0"
+version = "8.1.0"
 default-features = false
 git = "https://github.com/LTBL-Studio/rust-ffmpeg-sys.git"
 branch = "modular-player-patch"
