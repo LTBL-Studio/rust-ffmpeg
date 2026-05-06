@@ -127,7 +127,7 @@ version  = "0.25"
 optional = true
 
 [dependencies.ffmpeg-sys-next]
-version = "8.1.0"
+version = "8.1.1"
 default-features = false
 git = "https://github.com/LTBL-Studio/rust-ffmpeg-sys.git"
 branch = "modular-player-patch"
