@@ -10,8 +10,12 @@ pub use self::audio::Audio;
 pub mod flag;
 pub use self::flag::Flags;
 
-use ffi::*;
-use {Dictionary, DictionaryRef};
+pub mod decode_error;
+pub use self::decode_error::DecodeError;
+
+use crate::ffi::*;
+use crate::{Dictionary, DictionaryRef};
+use libc::c_int;
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
 pub struct Packet {
@@ -44,9 +48,11 @@ impl Frame {
 
     #[inline(always)]
     pub unsafe fn empty() -> Self {
-        Frame {
-            ptr: av_frame_alloc(),
-            _own: true,
+        unsafe {
+            Frame {
+                ptr: av_frame_alloc(),
+                _own: true,
+            }
         }
     }
 
@@ -62,7 +68,7 @@ impl Frame {
 
     #[inline(always)]
     pub unsafe fn is_empty(&self) -> bool {
-        (*self.as_ptr()).data[0].is_null()
+        unsafe { (*self.as_ptr()).data[0].is_null() }
     }
 }
 
@@ -82,6 +88,16 @@ impl Frame {
     #[inline]
     pub fn is_corrupt(&self) -> bool {
         self.flags().contains(Flags::CORRUPT)
+    }
+
+    #[inline]
+    pub fn decode_error_flags(&self) -> DecodeError {
+        unsafe { DecodeError::from_bits_truncate((*self.as_ptr()).decode_error_flags) }
+    }
+
+    #[inline]
+    pub fn has_decode_errors(&self) -> bool {
+        !self.decode_error_flags().is_empty()
     }
 
     #[inline]
@@ -138,6 +154,13 @@ impl Frame {
     }
 
     #[inline]
+    pub fn set_quality(&mut self, value: usize) {
+        unsafe {
+            (*self.as_mut_ptr()).quality = value as c_int;
+        }
+    }
+
+    #[inline]
     pub fn flags(&self) -> Flags {
         unsafe { Flags::from_bits_truncate((*self.as_ptr()).flags) }
     }
@@ -165,6 +188,7 @@ impl Frame {
         }
     }
 
+    /// Attach a new `size`-byte side-data buffer of type `kind`, zero-filled.
     #[inline]
     pub fn new_side_data(&mut self, kind: side_data::Type, size: usize) -> Option<SideData<'_>> {
         unsafe {
@@ -173,6 +197,11 @@ impl Frame {
             if ptr.is_null() {
                 None
             } else {
+                // `av_frame_new_side_data` hands back uninitialised memory, and
+                // `SideData::data` exposes it as `&[u8]`; reading uninitialised
+                // bytes through a reference is undefined behaviour.
+                #[allow(clippy::unnecessary_cast)]
+                (*ptr).data.write_bytes(0, (*ptr).size as usize);
                 Some(SideData::wrap(ptr))
             }
         }

@@ -1,24 +1,29 @@
 use std::any::Any;
 use std::ptr;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use super::decoder::Decoder;
 use super::encoder::Encoder;
-use super::{threading, Compliance, Debug, Flags, Id, Parameters};
-use ffi::*;
+use super::{Compliance, Debug, Flags, Id, Parameters, threading};
+use crate::ffi::*;
+use crate::media;
+use crate::{Codec, Error, Rational};
 use libc::c_int;
-use media;
-use {Codec, Error, Rational};
 
 pub struct Context {
     ptr: *mut AVCodecContext,
-    owner: Option<Rc<dyn Any>>,
+    owner: Option<Arc<dyn Any + Send + Sync>>,
 }
 
+// SAFETY: the context either owns its `AVCodecContext` or keeps its owner
+// alive through an atomically refcounted, thread-safe handle.
 unsafe impl Send for Context {}
 
 impl Context {
-    pub unsafe fn wrap(ptr: *mut AVCodecContext, owner: Option<Rc<dyn Any>>) -> Self {
+    pub unsafe fn wrap(
+        ptr: *mut AVCodecContext,
+        owner: Option<Arc<dyn Any + Send + Sync>>,
+    ) -> Self {
         Context { ptr, owner }
     }
 
@@ -161,6 +166,53 @@ impl Context {
                 (*self.as_mut_ptr()).framerate.num = 0;
                 (*self.as_mut_ptr()).framerate.den = 1;
             }
+        }
+    }
+
+    pub fn extradata(&self) -> Option<&[u8]> {
+        unsafe {
+            if (*self.as_ptr()).extradata.is_null() || (*self.as_ptr()).extradata_size == 0 {
+                None
+            } else {
+                Some(std::slice::from_raw_parts(
+                    (*self.as_ptr()).extradata,
+                    (*self.as_ptr()).extradata_size as usize,
+                ))
+            }
+        }
+    }
+
+    pub fn set_extradata<V: AsRef<[u8]>>(&mut self, data: Option<V>) {
+        let (data, size) = if let Some(data) = data {
+            let data = data.as_ref();
+            let size = data.len();
+            let padding = AV_INPUT_BUFFER_PADDING_SIZE as usize;
+            // libavcodec sizes copies as `extradata_size + padding` in `int`.
+            assert!(
+                size <= c_int::MAX as usize - padding,
+                "extradata length exceeds c_int range"
+            );
+
+            unsafe {
+                let buf = av_malloc(size + padding) as *mut u8;
+
+                if buf.is_null() {
+                    panic!("out of memory");
+                }
+
+                ptr::copy_nonoverlapping(data.as_ptr(), buf, size);
+                ptr::write_bytes(buf.add(size), 0, padding);
+
+                (buf, size as c_int)
+            }
+        } else {
+            (ptr::null_mut(), 0)
+        };
+
+        unsafe {
+            av_freep(&mut (*self.as_mut_ptr()).extradata as *mut _ as *mut libc::c_void);
+            (*self.as_mut_ptr()).extradata = data;
+            (*self.as_mut_ptr()).extradata_size = size;
         }
     }
 }
